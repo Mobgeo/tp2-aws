@@ -1,0 +1,67 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "TP AWS Lambda - Code Chargé depuis src/main.py"
+
+Parameters:
+  Environment:
+    Type: String
+    Description: "Nom de l'environnement (dev, staging, prod)"
+    Default: "gmaboudou"
+
+  BucketName:
+    Type: String
+    Description: "Nom du bucket S3 pour stocker le code de la fonction Lambda"
+    Default: "georges-lambda-trigger-bucket "
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: !Sub "lambda-access-s3"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow          # ✅ Deny → Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${BucketName}/*'
+
+  LambdaTrigger:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "mgeorges-lambda"
+      Handler: main.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.12
+      Code: ../src
+
+  LambdaPermissionForS3:              # ✅ Ajout
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref LambdaTrigger
+      Action: 'lambda:InvokeFunction'
+      Principal: 's3.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:s3:::${BucketName}'
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${BucketName}"
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt LambdaTrigger.Arn
